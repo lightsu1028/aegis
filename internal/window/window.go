@@ -68,6 +68,10 @@ func (w *Window) ResetBucket(offset int) {
 }
 
 // ResetBuckets empties the buckets based on the given offsets.
+// offset:当前要重置数据的bucket index
+// count:重置的bucket个数
+// 从当前offset位置的bucket开始，重置共count个bucket
+// count最小为0? count最大为滑动窗口的大小?
 func (w *Window) ResetBuckets(offset int, count int) {
 	for i := 0; i < count; i++ {
 		w.ResetBucket(offset + i)
