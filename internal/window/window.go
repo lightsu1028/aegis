@@ -3,8 +3,9 @@ package window
 // Bucket contains multiple float64 points.
 type Bucket struct {
 	Points []float64
-	Count  int64
-	next   *Bucket
+	// 累计次数
+	Count int64
+	next  *Bucket
 }
 
 // Append appends the given value to the bucket.

@@ -94,7 +94,9 @@ func NewBreaker(opts ...Option) circuitbreaker.CircuitBreaker {
 		o(&opt)
 	}
 	counterOpts := window.RollingCounterOpts{
-		Size:           opt.bucket,
+		// 默认bucket大小10
+		Size: opt.bucket,
+		// buckert窗口默认大小300ms
 		BucketDuration: time.Duration(int64(opt.window) / int64(opt.bucket)),
 	}
 	stat := window.NewRollingCounter(counterOpts)
@@ -111,8 +113,10 @@ func (b *Breaker) summary() (success int64, total int64) {
 	b.stat.Reduce(func(iterator window.Iterator) float64 {
 		for iterator.Next() {
 			bucket := iterator.Bucket()
+			// total滑动窗口内总请求数
 			total += bucket.Count
 			for _, p := range bucket.Points {
+				// success滑动窗口内总成功请求数
 				success += int64(p)
 			}
 		}
@@ -124,16 +128,23 @@ func (b *Breaker) summary() (success int64, total int64) {
 // Allow request if error returns nil.
 func (b *Breaker) Allow() error {
 	// The number of requests accepted by the backend
+	// accepts总成功请求数 total总请求数
 	accepts, total := b.summary()
 	// The number of requests attempted by the application layer(at the client, on top of the adaptive throttling system)
 	requests := b.k * float64(accepts)
 	// check overflow requests = K * accepts
+	// 1.当前滑动窗口总请求数太小允许通过
+	// 2.总请求数还没达到成功数的k倍 即成功率还比较高允许通过
 	if total < b.request || float64(total) < requests {
 		atomic.CompareAndSwapInt32(&b.state, StateOpen, StateClosed)
 		return nil
 	}
 	atomic.CompareAndSwapInt32(&b.state, StateClosed, StateOpen)
+	// float64(total) >= requests推导出(float64(total)-requests)/float64(total+1)取值[0,1)
 	dr := math.Max(0, (float64(total)-requests)/float64(total+1))
+	// dr [0,1)
+	// dr越趋近1 比如0.9 说明失败率急剧上升 需要拒绝请求 trueOnProba产生的随机值小于dr的概率是0.9 即此时拒绝的概率为0.9 放行的概率是0.1
+	// dr越趋近0 比如0.2 说明失败率急剧下降 成功率迅速上升 trueOnProba产生的随机值大于dr的概率是0.8 小于dr的概率是0.2 即拒绝请求的概率是0.2 放行的概率是0.8
 	drop := b.trueOnProba(dr)
 	if drop {
 		return circuitbreaker.ErrNotAllowed
@@ -150,6 +161,7 @@ func (b *Breaker) MarkSuccess() {
 func (b *Breaker) MarkFailed() {
 	// NOTE: when client reject request locally, continue to add counter let the
 	// drop ratio higher.
+	// bucket.count继续累加 bucket.points不累加
 	b.stat.Add(0)
 }
 

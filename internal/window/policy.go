@@ -82,15 +82,19 @@ func (r *RollingPolicy) Add(val float64) {
 
 // Reduce applies the reduction function to all buckets within the window.
 func (r *RollingPolicy) Reduce(f func(Iterator) float64) (val float64) {
+	// 读锁 阻塞其他写操作，只允许同一时间读
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	timespan := r.timespan()
 	if count := r.size - timespan; count > 0 {
+		// 为何要加1？
 		offset := r.offset + timespan + 1
 		if offset >= r.size {
 			offset = offset - r.size
 		}
+		// 计算迭代器所需的当前bucket索引位置offset以及总共需要统计的bucket数
+		// 使用统计函数f进行统计
 		val = f(r.window.Iterator(offset, count))
 	}
 	return val
